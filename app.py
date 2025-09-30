@@ -13,8 +13,8 @@ st.write("Upload a CSV with patient features to predict Parkinson's disease.")
 # ===== Load Pretrained Model & Scaler =====
 @st.cache_resource
 def load_model_and_scaler():
-    model = joblib.load("champion_model.joblib")  # Ensure this file exists in folder
-    scaler = joblib.load("scaler.pkl")            # Ensure this file exists in folder
+    model = joblib.load("champion_model.joblib")  # Make sure this file exists
+    scaler = joblib.load("scaler.pkl")            # Make sure this file exists
     return model, scaler
 
 model, scaler = load_model_and_scaler()
@@ -70,11 +70,26 @@ if uploaded_file:
 
         # ===== Make Predictions =====
         prediction = model.predict(df_scaled)
-        df['Prediction'] = ["Parkinson" if p==1 else "Healthy" for p in prediction]
 
         # ===== Display Results =====
         st.subheader("Prediction Results:")
-        st.dataframe(df)
+
+        # Create prediction DataFrame (only prediction column)
+        predictions_df = pd.DataFrame({
+            "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in prediction]
+        })
+
+        # Show predictions
+        st.dataframe(predictions_df)
+
+        # ===== Download Predictions as CSV =====
+        csv = predictions_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download Predictions as CSV",
+            data=csv,
+            file_name="parkinson_predictions.csv",
+            mime="text/csv"
+        )
 
     except Exception as e:
         st.error(f"Error processing file: {e}")
