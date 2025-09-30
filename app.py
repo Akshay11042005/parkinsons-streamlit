@@ -12,25 +12,34 @@ from sklearn.metrics import accuracy_score, classification_report
 # Streamlit UI
 # ===============================
 st.title("🧠 Parkinson's Disease Detection")
-st.write("Upload a dataset to train the model and then test predictions on new samples.")
+st.write("Upload a Parkinson's dataset to train the model and test new patient samples.")
 
 # ===============================
-# File uploader for dataset
+# Upload dataset
 # ===============================
 dataset_file = st.file_uploader("📂 Upload Parkinson's Dataset (CSV)", type=["csv"])
 
 if dataset_file is not None:
-    # Load dataset
-    df = pd.read_csv(dataset_file)
+    try:
+        # Read CSV safely
+        df = pd.read_csv(dataset_file, engine='python')
+    except Exception as e:
+        st.error(f"❌ Error reading CSV file: {e}")
+        st.stop()
 
     st.subheader("Dataset Preview")
     st.dataframe(df.head())
 
-    # Drop "name" column if it exists
+    # Drop non-numeric identifier if exists
     if "name" in df.columns:
         df = df.drop(columns=["name"])
 
-    # Features & target
+    # Check target column
+    if "status" not in df.columns:
+        st.error("❌ Dataset must contain 'status' column as target.")
+        st.stop()
+
+    # Features and target
     X = df.drop(columns=["status"])
     y = df["status"]
 
@@ -44,7 +53,7 @@ if dataset_file is not None:
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # Train model (Random Forest)
+    # Train Random Forest
     model = RandomForestClassifier(random_state=42, n_estimators=200)
     model.fit(X_train_scaled, y_train)
 
@@ -57,30 +66,28 @@ if dataset_file is not None:
     st.text("Classification Report:")
     st.text(classification_report(y_test, y_pred))
 
-    # ===============================
-    # Save model + scaler (optional)
-    # ===============================
+    # Save model and scaler (optional)
     joblib.dump(model, "trained_model.joblib")
     joblib.dump(scaler, "trained_scaler.pkl")
 
     # ===============================
-    # File uploader for new samples
+    # Upload new samples for prediction
     # ===============================
     st.subheader("🔍 Upload New Patient Data for Prediction")
     new_file = st.file_uploader("📂 Upload CSV of New Samples", type=["csv"], key="predict")
 
     if new_file is not None:
         try:
-            new_df = pd.read_csv(new_file)
+            new_df = pd.read_csv(new_file, engine='python')
 
-            # Ensure only features are used
+            # Ensure all required features exist
             available = [col for col in X.columns if col in new_df.columns]
             missing = [col for col in X.columns if col not in new_df.columns]
 
             df_selected = new_df[available].copy()
             for col in missing:
-                df_selected[col] = 0.0
-            df_selected = df_selected[X.columns]
+                df_selected[col] = 0.0  # fill missing columns with 0
+            df_selected = df_selected[X.columns]  # ensure correct order
 
             # Scale & predict
             new_scaled = scaler.transform(df_selected)
@@ -93,7 +100,7 @@ if dataset_file is not None:
             st.subheader("Prediction Results")
             st.dataframe(predictions_df)
 
-            # Download predictions
+            # Download button
             csv = predictions_df.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="📥 Download Predictions as CSV",
@@ -106,4 +113,4 @@ if dataset_file is not None:
                 st.warning(f"⚠️ Missing columns filled with 0: {missing}")
 
         except Exception as e:
-            st.error(f"❌ Error processing file: {e}")
+            st.error(f"❌ Error processing new file: {e}")
