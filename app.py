@@ -1,80 +1,109 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import joblib
 
-# =======================
-# Load model and scaler
-# =======================
-model = joblib.load("champion_model.joblib")
-scaler = joblib.load("scaler.pkl")
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, classification_report
 
-# Required feature columns from training
-required_columns = [
-    'MDVP:Fo(Hz)', 'MDVP:Fhi(Hz)', 'MDVP:Flo(Hz)',
-    'MDVP:Jitter(%)', 'MDVP:Jitter(Abs)', 'MDVP:RAP',
-    'MDVP:PPQ', 'Jitter:DDP', 'MDVP:Shimmer',
-    'MDVP:Shimmer(dB)', 'Shimmer:APQ3', 'Shimmer:APQ5',
-    'MDVP:APQ', 'Shimmer:DDA', 'NHR', 'HNR',
-    'RPDE', 'DFA', 'spread1', 'spread2', 'D2', 'PPE'
-]
-
-# =======================
+# ===============================
 # Streamlit UI
-# =======================
+# ===============================
 st.title("🧠 Parkinson's Disease Detection")
-st.write("Upload patient data (CSV) to predict Parkinson's disease.")
+st.write("Upload a dataset to train the model and then test predictions on new samples.")
 
-uploaded_file = st.file_uploader("📂 Upload CSV file", type=["csv"])
+# ===============================
+# File uploader for dataset
+# ===============================
+dataset_file = st.file_uploader("📂 Upload Parkinson's Dataset (CSV)", type=["csv"])
 
-if uploaded_file is not None:
-    try:
-        # Read uploaded CSV
-        df = pd.read_csv(uploaded_file)
+if dataset_file is not None:
+    # Load dataset
+    df = pd.read_csv(dataset_file)
 
-        # -------------------------------
-        # Safe column selection
-        # -------------------------------
-        # Keep only required columns, add missing ones as 0
-        available = [col for col in required_columns if col in df.columns]
-        missing = [col for col in required_columns if col not in df.columns]
+    st.subheader("Dataset Preview")
+    st.dataframe(df.head())
 
-        # Select available columns
-        df_selected = df[available].copy()
+    # Drop "name" column if it exists
+    if "name" in df.columns:
+        df = df.drop(columns=["name"])
 
-        # Add missing columns filled with 0.0
-        for col in missing:
-            df_selected[col] = 0.0
+    # Features & target
+    X = df.drop(columns=["status"])
+    y = df["status"]
 
-        # Reorder to match training
-        df_selected = df_selected[required_columns]
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
 
-        # =======================
-        # Scale + Predict
-        # =======================
-        df_scaled = scaler.transform(df_selected)
-        prediction = model.predict(df_scaled)
+    # Scale features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-        # Convert prediction to labels
-        predictions_df = pd.DataFrame({
-            "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in prediction]
-        })
+    # Train model (Random Forest)
+    model = RandomForestClassifier(random_state=42, n_estimators=200)
+    model.fit(X_train_scaled, y_train)
 
-        # Show results
-        st.subheader("Prediction Results:")
-        st.dataframe(predictions_df)
+    # Evaluate
+    y_pred = model.predict(X_test_scaled)
+    acc = accuracy_score(y_test, y_pred)
 
-        # Download button
-        csv = predictions_df.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            label="📥 Download Predictions as CSV",
-            data=csv,
-            file_name="parkinson_predictions.csv",
-            mime="text/csv"
-        )
+    st.subheader("📊 Model Evaluation")
+    st.write(f"Accuracy on test data: **{acc:.3f}**")
+    st.text("Classification Report:")
+    st.text(classification_report(y_test, y_pred))
 
-        # Warn if missing columns
-        if missing:
-            st.warning(f"⚠️ Missing columns filled with 0: {missing}")
+    # ===============================
+    # Save model + scaler (optional)
+    # ===============================
+    joblib.dump(model, "trained_model.joblib")
+    joblib.dump(scaler, "trained_scaler.pkl")
 
-    except Exception as e:
-        st.error(f"❌ Error processing file: {e}")
+    # ===============================
+    # File uploader for new samples
+    # ===============================
+    st.subheader("🔍 Upload New Patient Data for Prediction")
+    new_file = st.file_uploader("📂 Upload CSV of New Samples", type=["csv"], key="predict")
+
+    if new_file is not None:
+        try:
+            new_df = pd.read_csv(new_file)
+
+            # Ensure only features are used
+            available = [col for col in X.columns if col in new_df.columns]
+            missing = [col for col in X.columns if col not in new_df.columns]
+
+            df_selected = new_df[available].copy()
+            for col in missing:
+                df_selected[col] = 0.0
+            df_selected = df_selected[X.columns]
+
+            # Scale & predict
+            new_scaled = scaler.transform(df_selected)
+            preds = model.predict(new_scaled)
+
+            predictions_df = pd.DataFrame({
+                "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in preds]
+            })
+
+            st.subheader("Prediction Results")
+            st.dataframe(predictions_df)
+
+            # Download predictions
+            csv = predictions_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download Predictions as CSV",
+                data=csv,
+                file_name="parkinson_predictions.csv",
+                mime="text/csv"
+            )
+
+            if missing:
+                st.warning(f"⚠️ Missing columns filled with 0: {missing}")
+
+        except Exception as e:
+            st.error(f"❌ Error processing file: {e}")
