@@ -58,7 +58,7 @@ if dataset_file is not None:
         st.text("Classification Report:")
         st.text(classification_report(y_test, y_pred))
 
-        # Save model + scaler
+        # Save model + scaler (optional)
         joblib.dump(model, "trained_model.joblib")
         joblib.dump(scaler, "trained_scaler.pkl")
 
@@ -66,48 +66,44 @@ if dataset_file is not None:
         # File uploader for new samples
         # ===============================
         st.subheader("🔍 Upload New Patient Data for Prediction")
-        new_file = st.file_uploader(
-            "📂 Upload CSV of New Samples", type=["csv"], key="predict"
-        )
+        new_file = st.file_uploader("📂 Upload CSV of New Samples", type=["csv"], key="predict")
 
         if new_file is not None:
             try:
                 new_df = pd.read_csv(new_file)
 
-                # Ensure only features are used
-                available = [col for col in X.columns if col in new_df.columns]
-                missing = [col for col in X.columns if col not in new_df.columns]
+                # Check for missing columns
+                missing_cols = [col for col in X.columns if col not in new_df.columns]
 
-                df_selected = new_df[available].copy()
-                for col in missing:
-                    df_selected[col] = 0.0
-                df_selected = df_selected[X.columns]
+                if missing_cols:
+                    st.error(f"❌ Missing required columns: {missing_cols}")
+                    st.warning("Please include all required features in your CSV to get predictions.")
+                else:
+                    # Use only the feature columns
+                    df_selected = new_df[X.columns].copy()
 
-                # Scale & predict
-                new_scaled = scaler.transform(df_selected)
-                preds = model.predict(new_scaled)
+                    # Scale & predict
+                    new_scaled = scaler.transform(df_selected)
+                    preds = model.predict(new_scaled)
 
-                predictions_df = pd.DataFrame({
-                    "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in preds]
-                })
+                    predictions_df = pd.DataFrame({
+                        "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in preds]
+                    })
 
-                st.subheader("Prediction Results")
-                st.dataframe(predictions_df)
+                    st.subheader("Prediction Results")
+                    st.dataframe(predictions_df)
 
-                # Download predictions
-                csv = predictions_df.to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    label="📥 Download Predictions as CSV",
-                    data=csv,
-                    file_name="parkinson_predictions.csv",
-                    mime="text/csv"
-                )
-
-                if missing:
-                    st.warning(f"⚠️ Missing columns filled with 0: {missing}")
+                    # Download predictions
+                    csv = predictions_df.to_csv(index=False).encode("utf-8")
+                    st.download_button(
+                        label="📥 Download Predictions as CSV",
+                        data=csv,
+                        file_name="parkinson_predictions.csv",
+                        mime="text/csv"
+                    )
 
             except Exception as e:
-                st.error(f"❌ Error processing new patient file: {e}")
+                st.error(f"❌ Error processing file: {e}")
 
     except Exception as e:
-        st.error(f"❌ Error processing dataset file: {e}")
+        st.error(f"❌ Error processing dataset: {e}")
