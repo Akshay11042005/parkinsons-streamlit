@@ -13,11 +13,19 @@ st.write("Upload a CSV with patient features to predict Parkinson's disease.")
 # ===== Load Pretrained Model & Scaler =====
 @st.cache_resource
 def load_model_and_scaler():
-    model = joblib.load("champion_model.joblib")  # must be in same folder as app.py
-    scaler = joblib.load("scaler.pkl")            # must be in same folder as app.py
+    model = joblib.load("champion_model.joblib")  # Make sure this file exists
+    scaler = joblib.load("scaler.pkl")            # Make sure this file exists
     return model, scaler
 
 model, scaler = load_model_and_scaler()
+
+# ===== Feature Names Used in Training =====
+feature_columns = [
+    'MDVP:Fo(Hz)', 'MDVP:Fhi(Hz)', 'MDVP:Flo(Hz)', 'MDVP:Jitter(%)', 'MDVP:Jitter(Abs)',
+    'MDVP:RAP', 'MDVP:PPQ', 'Jitter:DDP', 'MDVP:Shimmer', 'MDVP:Shimmer(dB)',
+    'Shimmer:APQ3', 'Shimmer:APQ5', 'MDVP:APQ', 'Shimmer:DDA', 'NHR', 'HNR', 'RPDE',
+    'DFA', 'spread1', 'spread2', 'D2', 'PPE'
+]
 
 # ===== File Upload =====
 uploaded_file = st.file_uploader(
@@ -25,34 +33,38 @@ uploaded_file = st.file_uploader(
     type="csv"
 )
 
-# ===== Process Uploaded CSV =====
 if uploaded_file:
     try:
         df = pd.read_csv(uploaded_file)
         st.subheader("Input Data Preview:")
         st.dataframe(df.head())
 
-        # Drop non-feature columns
+        # ===== Drop Non-feature Columns =====
         for col in ["status", "name", "Prediction", "Model"]:
             if col in df.columns:
                 df = df.drop(columns=[col])
 
-        # Ensure columns match training
-        feature_columns = [
-            'MDVP:Fo(Hz)', 'MDVP:Fhi(Hz)', 'MDVP:Flo(Hz)', 'MDVP:Jitter(%)', 'MDVP:Jitter(Abs)',
-            'MDVP:RAP', 'MDVP:PPQ', 'Jitter:DDP', 'MDVP:Shimmer', 'MDVP:Shimmer(dB)',
-            'Shimmer:APQ3', 'Shimmer:APQ5', 'MDVP:APQ', 'Shimmer:DDA', 'NHR', 'HNR', 'RPDE',
-            'DFA', 'spread1', 'spread2', 'D2', 'PPE'
-        ]
+        # ===== Keep only features that exist =====
+        available_features = [col for col in feature_columns if col in df.columns]
+        missing_features = set(feature_columns) - set(df.columns)
+
+        if missing_features:
+            st.warning(f"The following required features are missing in the CSV and will be filled with 0: {missing_features}")
+
+        # Fill missing features with 0
+        for col in missing_features:
+            df[col] = 0
+
+        # Reorder columns to match training
         df = df[feature_columns]
 
         # Convert all values to float
         df = df.astype(float)
 
-        # Scale features
+        # ===== Scale Features =====
         df_scaled = scaler.transform(df)
 
-        # Predict
+        # ===== Make Predictions =====
         prediction = model.predict(df_scaled)
         df['Prediction'] = ["Parkinson" if p==1 else "Healthy" for p in prediction]
 
