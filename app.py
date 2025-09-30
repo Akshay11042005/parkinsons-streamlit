@@ -5,41 +5,35 @@ import joblib
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, classification_report
 
 # ===============================
 # Streamlit UI
 # ===============================
 st.title("🧠 Parkinson's Disease Detection")
-st.write("Upload a Parkinson's dataset to train the model and test new patient samples.")
+st.write("Upload a dataset, choose a model, and predict new samples.")
 
 # ===============================
-# Upload dataset
+# File uploader for dataset
 # ===============================
 dataset_file = st.file_uploader("📂 Upload Parkinson's Dataset (CSV)", type=["csv"])
 
 if dataset_file is not None:
-    try:
-        # Read CSV safely
-        df = pd.read_csv(dataset_file, engine='python')
-    except Exception as e:
-        st.error(f"❌ Error reading CSV file: {e}")
-        st.stop()
+    # Load dataset
+    df = pd.read_csv(dataset_file)
 
     st.subheader("Dataset Preview")
     st.dataframe(df.head())
 
-    # Drop non-numeric identifier if exists
+    # Drop non-numeric identifiers
     if "name" in df.columns:
         df = df.drop(columns=["name"])
 
-    # Check target column
-    if "status" not in df.columns:
-        st.error("❌ Dataset must contain 'status' column as target.")
-        st.stop()
-
-    # Features and target
+    # Features & target
     X = df.drop(columns=["status"])
     y = df["status"]
 
@@ -48,51 +42,74 @@ if dataset_file is not None:
         X, y, test_size=0.2, random_state=42, stratify=y
     )
 
-    # Scale features
+    # Feature scaling
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
 
-    # Train Random Forest
-    model = RandomForestClassifier(random_state=42, n_estimators=200)
-    model.fit(X_train_scaled, y_train)
+    # PCA option
+    use_pca = st.checkbox("Apply PCA for Dimensionality Reduction?", value=False)
+    if use_pca:
+        n_components = st.slider("Select number of components", 2, X_train.shape[1], 10)
+        pca = PCA(n_components=n_components)
+        X_train_scaled = pca.fit_transform(X_train_scaled)
+        X_test_scaled = pca.transform(X_test_scaled)
+        st.write(f"PCA applied: {n_components} components")
 
-    # Evaluate
+    # Model selection
+    model_choice = st.selectbox("Select Model", ["Random Forest", "SVM", "MLP"])
+
+    # Initialize model
+    if model_choice == "Random Forest":
+        model = RandomForestClassifier(n_estimators=200, random_state=42)
+    elif model_choice == "SVM":
+        model = SVC(kernel='rbf', probability=True, random_state=42)
+    elif model_choice == "MLP":
+        model = MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, random_state=42)
+
+    # Train & Evaluate
+    model.fit(X_train_scaled, y_train)
     y_pred = model.predict(X_test_scaled)
     acc = accuracy_score(y_test, y_pred)
 
     st.subheader("📊 Model Evaluation")
-    st.write(f"Accuracy on test data: **{acc:.3f}**")
+    st.write(f"**Model:** {model_choice}")
+    st.write(f"**Accuracy on test data:** {acc:.3f}")
     st.text("Classification Report:")
     st.text(classification_report(y_test, y_pred))
 
-    # Save model and scaler (optional)
+    # Save model & scaler
     joblib.dump(model, "trained_model.joblib")
     joblib.dump(scaler, "trained_scaler.pkl")
+    if use_pca:
+        joblib.dump(pca, "trained_pca.pkl")
 
     # ===============================
-    # Upload new samples for prediction
+    # File uploader for new patient data
     # ===============================
     st.subheader("🔍 Upload New Patient Data for Prediction")
     new_file = st.file_uploader("📂 Upload CSV of New Samples", type=["csv"], key="predict")
 
     if new_file is not None:
         try:
-            new_df = pd.read_csv(new_file, engine='python')
+            new_df = pd.read_csv(new_file)
 
-            # Ensure all required features exist
+            # Ensure feature columns match
             available = [col for col in X.columns if col in new_df.columns]
             missing = [col for col in X.columns if col not in new_df.columns]
 
             df_selected = new_df[available].copy()
             for col in missing:
-                df_selected[col] = 0.0  # fill missing columns with 0
-            df_selected = df_selected[X.columns]  # ensure correct order
+                df_selected[col] = 0.0
+            df_selected = df_selected[X.columns]
 
-            # Scale & predict
+            # Scale & PCA transform
             new_scaled = scaler.transform(df_selected)
-            preds = model.predict(new_scaled)
+            if use_pca:
+                new_scaled = pca.transform(new_scaled)
 
+            # Predict
+            preds = model.predict(new_scaled)
             predictions_df = pd.DataFrame({
                 "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in preds]
             })
@@ -113,4 +130,4 @@ if dataset_file is not None:
                 st.warning(f"⚠️ Missing columns filled with 0: {missing}")
 
         except Exception as e:
-            st.error(f"❌ Error processing new file: {e}")
+            st.error(f"❌ Error processing file: {e}")
