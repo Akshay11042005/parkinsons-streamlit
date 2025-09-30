@@ -2,70 +2,79 @@ import streamlit as st
 import pandas as pd
 import joblib
 
-# Load trained model and scaler
+# =======================
+# Load model and scaler
+# =======================
 model = joblib.load("champion_model.joblib")
 scaler = joblib.load("scaler.pkl")
 
-# Columns the model was trained on
-EXPECTED_COLUMNS = [
-    "MDVP:Fo(Hz)", "MDVP:Fhi(Hz)", "MDVP:Flo(Hz)", "MDVP:Jitter(%)",
-    "MDVP:Jitter(Abs)", "MDVP:RAP", "MDVP:PPQ", "Jitter:DDP",
-    "MDVP:Shimmer", "MDVP:Shimmer(dB)", "Shimmer:APQ3", "Shimmer:APQ5",
-    "MDVP:APQ", "Shimmer:DDA", "NHR", "HNR", "RPDE", "DFA",
-    "spread1", "spread2", "D2", "PPE"
+# Required feature columns from training
+required_columns = [
+    'MDVP:Fo(Hz)', 'MDVP:Fhi(Hz)', 'MDVP:Flo(Hz)',
+    'MDVP:Jitter(%)', 'MDVP:Jitter(Abs)', 'MDVP:RAP',
+    'MDVP:PPQ', 'Jitter:DDP', 'MDVP:Shimmer',
+    'MDVP:Shimmer(dB)', 'Shimmer:APQ3', 'Shimmer:APQ5',
+    'MDVP:APQ', 'Shimmer:DDA', 'NHR', 'HNR',
+    'RPDE', 'DFA', 'spread1', 'spread2', 'D2', 'PPE'
 ]
 
-# Mapping for alternative column names (if CSV is different)
-COLUMN_MAP = {
-    "Fo": "MDVP:Fo(Hz)",
-    "Fhi": "MDVP:Fhi(Hz)",
-    "Flo": "MDVP:Flo(Hz)",
-    "Jitter_percent": "MDVP:Jitter(%)",
-    "Jitter_abs": "MDVP:Jitter(Abs)",
-    "RAP": "MDVP:RAP",
-    "PPQ": "MDVP:PPQ",
-    "DDP": "Jitter:DDP",
-    "Shimmer": "MDVP:Shimmer",
-    "Shimmer_dB": "MDVP:Shimmer(dB)",
-    "APQ3": "Shimmer:APQ3",
-    "APQ5": "Shimmer:APQ5",
-    "APQ": "MDVP:APQ",
-    "DDA": "Shimmer:DDA"
-    # NHR, HNR, RPDE, DFA, spread1, spread2, D2, PPE already match
-}
-
+# =======================
 # Streamlit UI
+# =======================
 st.title("🧠 Parkinson's Disease Detection")
-st.write("Upload patient features (CSV) to predict Parkinson's disease.")
+st.write("Upload patient data (CSV) to predict Parkinson's disease.")
 
-uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+uploaded_file = st.file_uploader("📂 Upload CSV file", type=["csv"])
 
 if uploaded_file is not None:
     try:
-        # Read uploaded data
-        data = pd.read_csv(uploaded_file)
+        # Read uploaded CSV
+        df = pd.read_csv(uploaded_file)
 
-        # Apply column renaming if needed
-        data = data.rename(columns=COLUMN_MAP)
-
+        # -------------------------------
         # Safe column selection
-        missing_cols = [col for col in EXPECTED_COLUMNS if col not in data.columns]
-        if missing_cols:
-            st.error(f"❌ Missing columns in uploaded file: {missing_cols}")
-        else:
-            # Select only the required columns in correct order
-            X = data[EXPECTED_COLUMNS]
+        # -------------------------------
+        # Keep only required columns, add missing ones as 0
+        available = [col for col in required_columns if col in df.columns]
+        missing = [col for col in required_columns if col not in df.columns]
 
-            # Scale features
-            X_scaled = scaler.transform(X)
+        # Select available columns
+        df_selected = df[available].copy()
 
-            # Predict
-            predictions = model.predict(X_scaled)
+        # Add missing columns filled with 0.0
+        for col in missing:
+            df_selected[col] = 0.0
 
-            # Show only prediction column
-            result_df = pd.DataFrame({"Prediction": predictions})
-            st.success("✅ Prediction completed")
-            st.write(result_df)
+        # Reorder to match training
+        df_selected = df_selected[required_columns]
+
+        # =======================
+        # Scale + Predict
+        # =======================
+        df_scaled = scaler.transform(df_selected)
+        prediction = model.predict(df_scaled)
+
+        # Convert prediction to labels
+        predictions_df = pd.DataFrame({
+            "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in prediction]
+        })
+
+        # Show results
+        st.subheader("Prediction Results:")
+        st.dataframe(predictions_df)
+
+        # Download button
+        csv = predictions_df.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            label="📥 Download Predictions as CSV",
+            data=csv,
+            file_name="parkinson_predictions.csv",
+            mime="text/csv"
+        )
+
+        # Warn if missing columns
+        if missing:
+            st.warning(f"⚠️ Missing columns filled with 0: {missing}")
 
     except Exception as e:
-        st.error(f"Error processing file: {e}")
+        st.error(f"❌ Error processing file: {e}")
