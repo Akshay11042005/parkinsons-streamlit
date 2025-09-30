@@ -15,7 +15,7 @@ from sklearn.metrics import accuracy_score, classification_report
 # Streamlit UI
 # ===============================
 st.title("🧠 Parkinson's Disease Detection")
-st.write("Upload a dataset, choose a model, and predict new samples.")
+st.write("Upload a dataset to train multiple models and see comparative performance.")
 
 # ===============================
 # File uploader for dataset
@@ -56,33 +56,34 @@ if dataset_file is not None:
         X_test_scaled = pca.transform(X_test_scaled)
         st.write(f"PCA applied: {n_components} components")
 
-    # Model selection
-    model_choice = st.selectbox("Select Model", ["Random Forest", "SVM", "MLP"])
+    # ===============================
+    # Train multiple models
+    # ===============================
+    models = {
+        "Random Forest": RandomForestClassifier(n_estimators=200, random_state=42),
+        "SVM": SVC(kernel='rbf', probability=True, random_state=42),
+        "MLP": MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, random_state=42)
+    }
 
-    # Initialize model
-    if model_choice == "Random Forest":
-        model = RandomForestClassifier(n_estimators=200, random_state=42)
-    elif model_choice == "SVM":
-        model = SVC(kernel='rbf', probability=True, random_state=42)
-    elif model_choice == "MLP":
-        model = MLPClassifier(hidden_layer_sizes=(100,), max_iter=500, random_state=42)
+    results = {}
+    st.subheader("📊 Model Comparison")
+    for name, model in models.items():
+        model.fit(X_train_scaled, y_train)
+        y_pred = model.predict(X_test_scaled)
+        acc = accuracy_score(y_test, y_pred)
+        results[name] = acc
+        st.write(f"**{name} Accuracy:** {acc:.3f}")
 
-    # Train & Evaluate
-    model.fit(X_train_scaled, y_train)
-    y_pred = model.predict(X_test_scaled)
-    acc = accuracy_score(y_test, y_pred)
+    # Select best-performing model
+    best_model_name = max(results, key=results.get)
+    best_model = models[best_model_name]
+    st.success(f"✅ Best-performing model: **{best_model_name}** with accuracy {results[best_model_name]:.3f}")
 
-    st.subheader("📊 Model Evaluation")
-    st.write(f"**Model:** {model_choice}")
-    st.write(f"**Accuracy on test data:** {acc:.3f}")
-    st.text("Classification Report:")
-    st.text(classification_report(y_test, y_pred))
-
-    # Save model & scaler
-    joblib.dump(model, "trained_model.joblib")
-    joblib.dump(scaler, "trained_scaler.pkl")
+    # Save best model + scaler + PCA
+    joblib.dump(best_model, "best_model.joblib")
+    joblib.dump(scaler, "scaler.pkl")
     if use_pca:
-        joblib.dump(pca, "trained_pca.pkl")
+        joblib.dump(pca, "pca.pkl")
 
     # ===============================
     # File uploader for new patient data
@@ -108,8 +109,8 @@ if dataset_file is not None:
             if use_pca:
                 new_scaled = pca.transform(new_scaled)
 
-            # Predict
-            preds = model.predict(new_scaled)
+            # Predict with best model
+            preds = best_model.predict(new_scaled)
             predictions_df = pd.DataFrame({
                 "Prediction": ["Parkinson" if p == 1 else "Healthy" for p in preds]
             })
