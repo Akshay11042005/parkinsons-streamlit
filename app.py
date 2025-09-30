@@ -13,8 +13,8 @@ st.write("Upload a CSV with patient features to predict Parkinson's disease.")
 # ===== Load Pretrained Model & Scaler =====
 @st.cache_resource
 def load_model_and_scaler():
-    model = joblib.load("champion_model.joblib")  # Make sure this file exists
-    scaler = joblib.load("scaler.pkl")            # Make sure this file exists
+    model = joblib.load("champion_model.joblib")  # Ensure this file exists in folder
+    scaler = joblib.load("scaler.pkl")            # Ensure this file exists in folder
     return model, scaler
 
 model, scaler = load_model_and_scaler()
@@ -33,32 +33,36 @@ uploaded_file = st.file_uploader(
     type="csv"
 )
 
+# ===== Process Uploaded CSV =====
 if uploaded_file:
     try:
+        # Read CSV
         df = pd.read_csv(uploaded_file)
         st.subheader("Input Data Preview:")
         st.dataframe(df.head())
 
-        # ===== Drop Non-feature Columns =====
+        # ===== Safe Column Selection =====
+
+        # 1️⃣ Drop non-feature columns
         for col in ["status", "name", "Prediction", "Model"]:
             if col in df.columns:
                 df = df.drop(columns=[col])
 
-        # ===== Keep only features that exist =====
+        # 2️⃣ Keep only features that exist and identify missing ones
         available_features = [col for col in feature_columns if col in df.columns]
         missing_features = set(feature_columns) - set(df.columns)
 
         if missing_features:
-            st.warning(f"The following required features are missing in the CSV and will be filled with 0: {missing_features}")
+            st.warning(f"The following required features are missing and will be filled with 0: {missing_features}")
 
-        # Fill missing features with 0
+        # 3️⃣ Fill missing features with 0
         for col in missing_features:
             df[col] = 0
 
-        # Reorder columns to match training
+        # 4️⃣ Reorder columns to match training
         df = df[feature_columns]
 
-        # Convert all values to float
+        # 5️⃣ Convert all to float
         df = df.astype(float)
 
         # ===== Scale Features =====
@@ -68,6 +72,7 @@ if uploaded_file:
         prediction = model.predict(df_scaled)
         df['Prediction'] = ["Parkinson" if p==1 else "Healthy" for p in prediction]
 
+        # ===== Display Results =====
         st.subheader("Prediction Results:")
         st.dataframe(df)
 
